@@ -1,0 +1,234 @@
+version: '3.9'
+services:
+  traefik:
+    image: traefik:v2.4
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      #- "--entrypoints.websecure.http.tls.options=default"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./traefik.yml:/etc/traefik/traefik.yml"
+      - "/etc/localtime:/etc/localtime:ro"
+      - "./certs:/certs"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`traefik.com`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.entrypoints=web"
+      #middlewares autenticacion
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=fran:$$apr1$$NA03H9Qy$$98kOazO/iAfge5R0KERyx."
+      - "traefik.http.routers.api.middlewares=traefik-auth"
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.2
+
+  db:
+    image: mysql:5.7
+    container_name: db
+    restart: always
+    #ports:
+    #  - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: fran12
+      MYSQL_DATABASE: wp
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: fran12
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.3
+  db2:
+    image: mysql:5.7
+    container_name: db2
+    restart: always
+    #ports:
+    #  - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: fran12
+      MYSQL_DATABASE: wp2
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: fran12
+    volumes:
+      - db2_data:/var/lib/mysql
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.4
+
+  cwp:
+    image: wordpress:latest
+    container_name: cwp
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cwp1.rule=Host(`perretes.com`)"
+      - "traefik.http.routers.cwp1.entrypoints=web"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.cwp1.middlewares=redirect-to-https"
+      - "traefik.http.routers.cwp1-secure.rule=Host(`perretes.com`)"
+      - "traefik.http.routers.cwp1-secure.entrypoints=websecure"
+      - "traefik.http.routers.cwp1-secure.tls=true"
+    depends_on:
+      - db
+      - traefik
+    restart: always
+    ports:
+      - "8095:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: fran12
+      WORDPRESS_DB_NAME: wp
+    volumes:
+      - wp-content:/var/www/html/wp-content
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.5
+
+  cwp2:
+    image: wordpress:latest
+    container_name: cwp2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cwp2.rule=Host(`gatetes.com`)"
+      - "traefik.http.routers.cwp2.entrypoints=web"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.cwp2.middlewares=redirect-to-https"
+      - "traefik.http.routers.cwp2-secure.rule=Host(`gatetes.com`)"
+      - "traefik.http.routers.cwp2-secure.entrypoints=websecure"
+      - "traefik.http.routers.cwp2-secure.tls=true"
+    depends_on:
+      - db2
+      - traefik
+    restart: always
+    #ports:
+    #  - "8097:80"
+    environment:
+      WORDPRESS_DB_HOST: db2
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: fran12
+      WORDPRESS_DB_NAME: wp2
+    volumes:
+      - wp2-content:/var/www/html/wp-content
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.6
+
+
+      #- "traefik.http.middlewares.secure-headers.headers.frameDeny=true"
+      #- "traefik.http.routers.cwp1-secure.middlewares=secure-headers@docker"
+
+  cadvisor:
+    container_name: cadvisor
+    image: gcr.io/cadvisor/cadvisor:latest
+    #ports:
+    #  - "9200:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    labels:
+      - "traefik.enable=true"
+      #HTTP routers
+      - "traefik.http.routers.cadvisor.entrypoints=web"
+      - "traefik.http.routers.cadvisor.rule=Host(`cadvisor.localhost`)"
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.7
+    depends_on:
+      - traefik
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus
+    #ports:
+    #  - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=1y"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.entrypoints=web"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.localhost`)"
+    depends_on:
+      - traefik
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.8
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:8.0.6
+    restart: unless-stopped
+    #ports:
+    #  - "3000:3000"
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.entrypoints=web"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.localhost`)"
+    depends_on:
+      - traefik
+      - prometheus
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.9
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: always
+    #ports:
+    #  - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.entrypoints=web"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.localhost`)"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    networks:
+      traefik:
+        ipv4_address: 172.18.0.10
+
+#  alpine:
+#    image: alpine:latest
+#    container_name: alpine_container
+#    command: sh
+#    stdin_open: true  # Mantener stdin abierto incluso si no está conectado
+#    tty: true         # Asignar una terminal pseudo-TTY
+#    networks:
+#      traefik:
+
+volumes:
+  db_data:
+  db2_data:
+  wp-content:
+  wp2-content:
+  prometheus-data:
+  grafana-data:
+  portainer-data:
+
+networks:
+  traefik:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+
