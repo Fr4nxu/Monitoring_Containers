@@ -1,0 +1,39 @@
+api:
+  dashboard: true
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false
+tls:
+  certificates:
+    - certFile: "/etc/traefik/certs/perretes.com+4.pem"
+      keyFile: "/etc/traefik/certs/perretes.com+4-key.pem"
+    - certFile: "/etc/traefik/certs/gatetes.com+4.pem"
+      keyFile: "/etc/traefik/certs/gatetes.com+4-key.pem"
+      stores:
+        - default
+
+#  options:
+#    default:
+#      minVersion: VersionTLS12
+
+
+
+#  SELF SIGNED CERTIFICATE, WITH WARNING
+#certificatesResolvers:
+#  letsencrypt:
+#    acme:
+#      email: emailllllll
+#      storage: acme.json
+#      tlsChallenge: {}
+
+# SELF Signed 
+#tls:
+#  certificates:
+#    - certFile: "~/perretesletes.pem"
+#      keyFile: "~/perretesletes.pem"
